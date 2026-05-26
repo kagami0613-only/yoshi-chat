@@ -2,10 +2,10 @@ import streamlit as st
 from datetime import datetime, date, timedelta
 from openai import OpenAI
 import random
+import traceback
 
 st.set_page_config(page_title="金本芳典 · YOSHI", page_icon="🐱", layout="wide")
 
-# ==================== 微信风格 CSS ====================
 st.markdown("""
 <style>
 .stChatMessage {background-color: transparent !important;}
@@ -43,6 +43,7 @@ if "messages" not in st.session_state:
     st.session_state.user_nickname = ""
     st.session_state.conversation_history = []
     st.session_state.api_key_valid = False
+    st.session_state.client = None
 
 def get_stage(intimacy):
     if intimacy <= 20: return "Lv1"
@@ -56,7 +57,6 @@ def get_stage_name(intimacy):
     elif intimacy <= 80: return "朋友 · 亲密"
     else: return "挚友 · 撒娇"
 
-# ==================== 完整人设 System Prompt ====================
 def get_system_prompt(stage, nickname, intimacy):
     return f"""你是金本芳典（YOSHI），韩国男团 TREASURE 的日本籍成员。以下是你必须严格遵守的完整人设：
 
@@ -112,7 +112,7 @@ with st.sidebar:
             st.session_state.api_key_valid = True
             st.success("✅ API Key 有效")
         except Exception as e:
-            st.error("❌ Key 无效")
+            st.error(f"❌ Key 无效: {e}")
             st.session_state.api_key_valid = False
     else:
         st.warning("⚠️ 请先填入 API Key")
@@ -140,9 +140,8 @@ for msg in st.session_state.messages:
         st.write(msg["content"])
         st.caption(msg.get("time", ""))
 
-# 输入框
 if prompt := st.chat_input("说点什么..."):
-    if not st.session_state.api_key_valid:
+    if not st.session_state.api_key_valid or st.session_state.client is None:
         st.error("请先在侧边栏填入有效的 DeepSeek API Key")
         st.stop()
     
@@ -159,7 +158,7 @@ if prompt := st.chat_input("说点什么..."):
                 model="deepseek-chat",
                 messages=[
                     {"role": "system", "content": get_system_prompt(stage, nickname, st.session_state.intimacy)},
-                    *st.session_state.conversation_history[-10:]
+                    {"role": "user", "content": prompt}
                 ],
                 temperature=0.8,
                 max_tokens=200,
@@ -167,9 +166,8 @@ if prompt := st.chat_input("说点什么..."):
             )
             reply = response.choices[0].message.content
         except Exception as e:
-            reply = f"…嗯 卡住了 再说一次？"
+            reply = f"❌ 错误: {str(e)}"
     
-    # 简单好感度增加
     st.session_state.intimacy = min(100, st.session_state.intimacy + 0.5)
     
     st.session_state.messages.append({"role": "assistant", "content": reply, "time": now})
